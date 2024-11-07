@@ -543,6 +543,16 @@ def main():
                     batch_idx
                 )
 
+                print(f"\nBatch {batch_idx}")
+                print(
+                    f"Disparity min={disp.min().item():.4f}, max={disp.max().item():.4f}, mean={disp.mean().item():.4f}")
+                print(
+                    f"Depth min={depth.min().item():.4f}, max={depth.max().item():.4f}, mean={depth.mean().item():.4f}")
+                print(f"Photometric Loss: {photometric_loss.item():.4f}")
+                print(f"Smoothness Loss: {smoothness_loss.item():.4f}")
+                print(f"Total Loss: {total_loss.item():.4f}")
+                print("-" * 20)
+
             # Optimization step
             optimizer.zero_grad()
             total_loss.backward()
