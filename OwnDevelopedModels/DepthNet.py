@@ -8,63 +8,43 @@ from Decoder import Decoder
 class DepthNet(nn.Module):
     def __init__(self, min_depth=0.05, max_depth=150.0):
         super(DepthNet, self).__init__()
+        # Initialize encoder (ResNet18-based) and decoder
         self.encoder = PoseNet18Encoder()
         self.decoder = Decoder()
+        
+        # Set minimum and maximum depth constraints
         self.min_depth = min_depth
         self.max_depth = max_depth
+        
+        # Target mean depth value for normalization during training
         self.target_mean_depth = 10.0
 
-        # Add skip connections
-        self.skip1 = nn.Conv2d(256, 256, 1)
-        self.skip2 = nn.Conv2d(128, 128, 1)
-        self.skip3 = nn.Conv2d(64, 64, 1)
+        
+        self.skip1 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
+        self.skip2 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
+        self.skip3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+    
+
 
     def forward(self, x):
+        # Step 1: Pass input through the encoder to extract features and intermediate skip connections
         features, skip_connections = self.encoder(x)
 
-        # Pass both to decoder
+        # Step 2: Decode features into a raw disparity map, utilizing skip connections for finer details
         disp_raw = self.decoder(features, skip_connections)
-        # Better sigmoid scaling
+        
+        # Step 3: Scale disparity with sigmoid to produce values between 0.01 and 0.31
         disp = 0.3 * F.sigmoid(disp_raw) + 0.01
 
-        # Convert to depth (avoid extreme values)
-        depth = 1.0 / (disp + 1e-6)
+        # Step 4: Convert disparity to depth by taking the inverse clamp to instue no divition with 0.
+        depth = 1.0 / torch.clamp(disp, min=1e-3)
 
-        # Soft depth constraints (avoid hard clipping)
-        depth = self.min_depth + (self.max_depth - self.min_depth) * (
-                torch.tanh(depth / self.max_depth) + 1.0) / 2.0
+        # Step 5: clamp depth. 
+        depth = torch.clamp(depth, min=self.min_depth, max=self.max_depth)
+
         return disp,depth
 
-        # Improved disparity activation with gradient-friendly sigmoid
-        disp = 0.3 * F.sigmoid(disp_raw) + 0.01
-
-        # Convert to depth with better numerical stability
-        depth = torch.where(
-            disp > 1e-3,
-            1.0 / disp,
-            torch.ones_like(disp) * self.max_depth
-        )
-
-        # Scale depth with gradient-friendly normalization
-        mean_depth = torch.mean(depth, dim=[1, 2, 3], keepdim=True)
-        scale = self.target_mean_depth / (mean_depth + 1e-8)
-        depth = depth * scale
-        depth = torch.exp(torch.log(depth) * 1.2)  # Add exponential scaling
-
-        # Improved soft constraints with better gradient flow
-        normalized_depth = (depth - self.min_depth) / (self.max_depth - self.min_depth)
-        depth = self.min_depth + (self.max_depth - self.min_depth) * torch.sigmoid(
-            4.0 * (normalized_depth - 0.5)  # Steeper sigmoid for better range utilization
-        )
-
-        # Recompute disparity with the same numerical stability as above
-        disp_final = torch.where(
-            depth > 1e-3,
-            1.0 / depth,
-            torch.ones_like(depth) * (1.0 / self.max_depth)
-        )
-
-        return disp_final, depth
+        
 
 class DepthNet_LEGACY(nn.Module):
     def __init__(self, min_depth=0.1, max_depth=100.0):
