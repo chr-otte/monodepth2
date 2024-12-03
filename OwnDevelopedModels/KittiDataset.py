@@ -47,7 +47,8 @@ class KITTIRawDataset(Dataset):
 
         # Loop over sequences to collect file paths
         for seq in sequences:
-            seq_dir = os.path.join(root_dir, seq)
+            #seq_dir = os.path.join(root_dir, seq)
+            seq_dir = root_dir
             # List all drives within the date
             drives = [d for d in os.listdir(seq_dir) if 'sync' in d]
             for drive in drives:
@@ -60,7 +61,7 @@ class KITTIRawDataset(Dataset):
                 # Get sorted list of image files
                 image_files = sorted([
                     os.path.join(image_dir, f) for f in os.listdir(image_dir)
-                    if f.endswith('.JPG') or f.endswith('.jpg') # just ensuring it is images only
+                    if f.endswith('.PNG') or f.endswith('.png') # just ensuring it is images only
                 ])
 
                 # Collect samples as dictionaries containing current and source images
@@ -108,3 +109,68 @@ class KITTIRawDataset(Dataset):
         }
 
 
+class KITTIRawDatasetWithAugmentation(Dataset):
+    def __init__(self, root_dir, sequences, camera='image_02'):
+        self.root_dir = root_dir
+        self.sequences = sequences
+        self.transform = transforms.Compose([
+            transforms.Resize((192, 640)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.3706, 0.3861, 0.3680],
+                                 std=[0.3059, 0.3125, 0.3136])
+        ])
+        self.samples = []
+
+        # Data augmentation transforms
+        self.augmentation = transforms.Compose([
+            transforms.ColorJitter(brightness=0.2, contrast=0.2),  # Adjust brightness and contrast
+            transforms.RandomHorizontalFlip()  # Random horizontal flip
+        ])
+
+        for seq in sequences:
+            seq_dir = root_dir
+            drives = [d for d in os.listdir(seq_dir) if 'sync' in d]
+            for drive in drives:
+                drive_dir = os.path.join(seq_dir, drive)
+                image_dir = os.path.join(drive_dir, camera, 'data')
+
+                if not os.path.exists(image_dir):
+                    continue
+
+                image_files = sorted([
+                    os.path.join(image_dir, f) for f in os.listdir(image_dir)
+                    if f.endswith('.PNG') or f.endswith('.png')
+                ])
+
+                for i in range(1, len(image_files) - 1):
+                    frame = {}
+                    frame['curr_img'] = image_files[i]
+                    frame['src_imgs'] = [
+                        image_files[i - 1],
+                        image_files[i + 1]
+                    ]
+                    self.samples.append(frame)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+        curr_image = Image.open(sample['curr_img']).convert('RGB')
+        src_images = [Image.open(img_path).convert('RGB') for img_path in sample['src_imgs']]
+
+        # Apply data augmentation
+        if random.random() < 0.5:  # 50% chance to apply augmentation
+            curr_image = self.augmentation(curr_image)
+            src_images = [self.augmentation(img) for img in src_images]
+
+        if self.transform:
+            curr_image = self.transform(curr_image)
+            src_images = [self.transform(img) for img in src_images]
+
+        src_images = torch.stack(src_images)
+
+        return {
+            'curr_image': curr_image,
+            'src_images': src_images
+        }
