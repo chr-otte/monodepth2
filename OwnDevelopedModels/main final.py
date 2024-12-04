@@ -7,7 +7,6 @@ from torchvision import models, transforms
 from PIL import Image
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from KittiDataset import KITTIRawDataset, KITTIRawDatasetWithAugmentation
-from DepthNet import DepthNet
 from PoseNet import PoseNet
 import cv2
 import numpy as np
@@ -212,7 +211,7 @@ def analyze_depth_values(depth_tensor):
     return stats
 
 
-def save_visualization_improved(curr_image, depth, epoch, batch_idx):
+def save_visualization_improved(curr_image, depth, epoch, batch_idx,experiment_idx):
     """Improved visualization function with better depth map rendering"""
     import numpy as np
     import cv2
@@ -265,9 +264,9 @@ def save_visualization_improved(curr_image, depth, epoch, batch_idx):
     cv2.putText(combined_img, 'Depth (Eq)', (3 * w + 10, 30), font, 1, (255, 255, 255), 2)
 
     # Save the visualization
-    cv2.imwrite(f'depth_vis_epoch_{epoch}_batch_{batch_idx}.png', combined_img)
+    cv2.imwrite(f'depth_vis_epoch_{epoch}_batch_{batch_idx}_exp_{experiment_idx}.png', combined_img)
     # Save depth values in case we need them for further analysis
-    np.save(f'depth_raw_epoch_{epoch}_batch_{batch_idx}.npy', depth_np)
+    np.save(f'depth_raw_epoch_{epoch}_batch_{batch_idx}_exp_{experiment_idx}.npy', depth_np)
 
 # Modified compute_mean_depth_loss with more detailed constraints
 def compute_mean_depth_loss_improved(depth, target_mean=10.0):
@@ -454,7 +453,7 @@ def get_experiment_config(i):
     elif i == 4:
         name = "Black & White Images"
         target_mean_loss_weight = 1.0
-        depth_net = DepthNet() 
+        depth_net = DepthNet18() 
         KITTI_Raw_Data_set = KITTIRawDataset
         pose_net= PoseNet(num_input_images=0)
         weight_decay = 1e-5
@@ -462,7 +461,7 @@ def get_experiment_config(i):
     elif i == 5:
         name = "Increased Weight Decay"
         target_mean_loss_weight = 1.0
-        depth_net = DepthNet()  # Use your baseline model
+        depth_net = DepthNet18()  # Use your baseline model
         KITTI_Raw_Data_set = KITTIRawDataset
         pose_net=PoseNet(num_input_images=2)
         # Adjust weight decay in optimizer
@@ -481,9 +480,10 @@ def get_experiment_config(i):
 
 def main():
 
-    root_dir = 'C:/Github/monodepth2/kitti_data'
-    train_sequences = ['2011_09_26']
-    val_sequences = ['2011_09_30', '2011_10_03']
+    root_dir =  r'C:\Users\Benjamin Christensen\Desktop\9 semester\Deep learning for visual recognition\Projekt\kitti_data'
+    
+    train_sequences = ['10']
+    val_sequences = ['10']
 
     for i in range(7):  # Adjust the range based on the number of experiments
         depth_net, target_mean_loss_weight,KITTI_Raw_Data_set, pose_net,weight_decay ,name = get_experiment_config(i)
@@ -506,157 +506,158 @@ def main():
         pose_net = pose_net.to(device)
 
         def initialize_weights(m):
-        if isinstance(m, nn.Conv2d):
-            nn.init.xavier_uniform_(m.weight)
-            if m.bias is not None:
-                if m.out_channels == 1:  # Final layer
-                    # Initialize to predict middle-range depths
-                    nn.init.constant_(m.bias, 0.0)  # Start at neutral point
-                else:
-                    nn.init.zeros_(m.bias)
+            if isinstance(m, nn.Conv2d):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    if m.out_channels == 1:  # Final layer
+                        # Initialize to predict middle-range depths
+                        nn.init.constant_(m.bias, 0.0)  # Start at neutral point
+                    else:
+                        nn.init.zeros_(m.bias)
 
-    depth_net.decoder.apply(initialize_weights)
+        depth_net.decoder.apply(initialize_weights)
 
-    # Define optimizer and scheduler
-    params = list(depth_net.parameters()) + list(pose_net.parameters())
-    optimizer = torch.optim.Adam([
-        {'params': depth_net.encoder.parameters(), 'lr': 5e-5},  # Slower learning rate
-        {'params': depth_net.decoder.parameters(), 'lr': 1e-2}
-    ], weight_decay=weight_decay)
-
-
-    scheduler = ReduceLROnPlateau(
-        optimizer,
-        mode='min',
-        factor=0.5,
-        patience=500
-    )
-
-    # Example of accessing the current learning rate
-    print(f"Current learning rate: {scheduler.get_last_lr()}")
-
-    # Constants
-    num_epochs = 5
-    lambda_smooth = 0.000005    # Further reduce smoothness for better detail
-    K = get_default_intrinsics().to(device)
-    inv_K = torch.inverse(K).to(device)
-
-    for epoch in range(num_epochs):
+        # Define optimizer and scheduler
+        params = list(depth_net.parameters()) + list(pose_net.parameters())
+        optimizer = torch.optim.Adam([
+            {'params': depth_net.encoder.parameters(), 'lr': 5e-5},  # Slower learning rate
+            {'params': depth_net.decoder.parameters(), 'lr': 1e-2}
+        ], weight_decay=weight_decay)
 
 
+        scheduler = ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=0.5,
+            patience=500
+        )
 
-        depth_net.train()
-        pose_net.train()
-        epoch_loss = 0
+        # Example of accessing the current learning rate
+        print(f"Current learning rate: {scheduler.get_last_lr()}")
 
-        for batch_idx, batch in enumerate(train_loader):
-            curr_image = batch['curr_image'].to(device)
-            src_images = batch['src_images'].to(device)
+        # Constants
+        num_epochs = 5
+        lambda_smooth = 0.000005    # Further reduce smoothness for better detail
+        K = get_default_intrinsics().to(device)
+        inv_K = torch.inverse(K).to(device)
 
-            if src_images.nelement() == 0:
-                continue
+        for epoch in range(num_epochs):
 
-            batch_size, num_src, _, _, _ = src_images.shape
 
-            # Initialize total loss for this batch
-            total_loss = torch.tensor(0.0, device=device)
 
-            # Get depth and disparity predictions
-            disp, depth = depth_net(curr_image)
+            depth_net.train()
+            pose_net.train()
+            epoch_loss = 0
 
-            # Compute smoothness losses
-            # Having both losses helps the model learn better depth representations:
-            #   Depth smoothness handles far-range smoothness well
-            #   Disparity smoothness handles near-range smoothness well
-            
-            depth = F.interpolate(depth, size=curr_image.shape[2:], mode='bilinear', align_corners=False)
-            disp = F.interpolate(disp, size=curr_image.shape[2:], mode='bilinear', align_corners=False)
-            depth_smoothness = compute_smoothness_loss(depth, curr_image)
-            disp_smoothness = compute_disparity_smoothness_loss(disp, curr_image)
-            smoothness_loss = depth_smoothness + disp_smoothness
-            reg_loss = compute_depth_regularization_loss(depth)
-            total_loss += 1 * reg_loss  # Adjust weight as needed,   0.1 before
+            for batch_idx, batch in enumerate(train_loader):
+                curr_image = batch['curr_image'].to(device)
+                src_images = batch['src_images'].to(device)
 
-            # Process each source image (frame t-1 and t+1)
-            for i in range(num_src):
-                src_image = src_images[:, i]
+                if src_images.nelement() == 0:
+                    continue
 
-                is_forward = i == 1 # determines the order of the input for the pose network
+                batch_size, num_src, _, _, _ = src_images.shape
 
-                # Prepare input for pose network , predicts the movement between the images
-                if is_forward:
-                    pose_input = torch.cat([curr_image, src_image], dim=1)
-                else:
-                    pose_input = torch.cat([src_image, curr_image], dim=1)
+                # Initialize total loss for this batch
+                total_loss = torch.tensor(0.0, device=device)
 
-                pose = pose_net(pose_input)[:, 0]
+                # Get depth and disparity predictions
+                disp, depth = depth_net(curr_image)
 
-                # Get transformation
-                axisangle = pose[:, :3].unsqueeze(1)    # rotational x,y,z
-                translation = pose[:, 3:].unsqueeze(1)  # x,y,z
-                T = transformation_from_parameters(axisangle, translation, invert=is_forward)
+                # Compute smoothness losses
+                # Having both losses helps the model learn better depth representations:
+                #   Depth smoothness handles far-range smoothness well
+                #   Disparity smoothness handles near-range smoothness well
+                
+                depth = F.interpolate(depth, size=curr_image.shape[2:], mode='bilinear', align_corners=False)
+                disp = F.interpolate(disp, size=curr_image.shape[2:], mode='bilinear', align_corners=False)
+                depth_smoothness = compute_smoothness_loss(depth, curr_image)
+                disp_smoothness = compute_disparity_smoothness_loss(disp, curr_image)
+                smoothness_loss = depth_smoothness + disp_smoothness
+                reg_loss = compute_depth_regularization_loss(depth)
+                total_loss += 1 * reg_loss  # Adjust weight as needed,   0.1 before
 
-                # Reconstruct image
-                reconstructed_image = reconstruct_image(
-                    src_image,
-                    depth,
-                    T,
-                    K.expand(batch_size, -1, -1),
-                    inv_K.expand(batch_size, -1, -1)
-                )
+                # Process each source image (frame t-1 and t+1)
+                for i in range(num_src):
+                    src_image = src_images[:, i]
 
-                # Compute photometric loss
-                photometric_loss = compute_photometric_loss(curr_image, reconstructed_image)
-                total_loss += photometric_loss
+                    is_forward = i == 1 # determines the order of the input for the pose network
 
-            # Add smoothness loss
-            total_loss += lambda_smooth * smoothness_loss
-            total_loss += target_mean_loss_weight*compute_mean_depth_loss(depth)  # Add mean depth constraint
-            # Logging
-            if batch_idx % 20 == 0:
-                # Save visualization
-                save_visualization_improved(
-                    curr_image[0],
-                    depth[0, 0],
-                    epoch,
-                    batch_idx
-                )
+                    # Prepare input for pose network , predicts the movement between the images
+                    if is_forward:
+                        pose_input = torch.cat([curr_image, src_image], dim=1)
+                    else:
+                        pose_input = torch.cat([src_image, curr_image], dim=1)
 
-                print(f"\nBatch {batch_idx}")
-                print(
-                    f"Disparity min={disp.min().item():.4f}, max={disp.max().item():.4f}, mean={disp.mean().item():.4f}")
-                print(
-                    f"Depth min={depth.min().item():.4f}, max={depth.max().item():.4f}, mean={depth.mean().item():.4f}")
-                print(f"Photometric Loss: {photometric_loss.item():.4f}")
-                print(f"Smoothness Loss: {smoothness_loss.item():.4f}")
-                print(f"Total Loss: {total_loss.item():.4f}")
-                print("-" * 20)
+                    pose = pose_net(pose_input)[:, 0]
 
-            # Optimization step
-            optimizer.zero_grad()
-            total_loss.backward()
-            # Add gradient clipping
-            torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
-            optimizer.step()
+                    # Get transformation
+                    axisangle = pose[:, :3].unsqueeze(1)    # rotational x,y,z
+                    translation = pose[:, 3:].unsqueeze(1)  # x,y,z
+                    T = transformation_from_parameters(axisangle, translation, invert=is_forward)
 
-            epoch_loss += total_loss.item()
+                    # Reconstruct image
+                    reconstructed_image = reconstruct_image(
+                        src_image,
+                        depth,
+                        T,
+                        K.expand(batch_size, -1, -1),
+                        inv_K.expand(batch_size, -1, -1)
+                    )
 
-        # End of epoch
-        avg_epoch_loss = epoch_loss / len(train_loader)
-        print(f"Epoch [{epoch + 1}/{num_epochs}], Average Loss: {avg_epoch_loss:.4f}")
+                    # Compute photometric loss
+                    photometric_loss = compute_photometric_loss(curr_image, reconstructed_image)
+                    total_loss += photometric_loss
 
-        # Step the scheduler with the average epoch loss
-        scheduler.step(avg_epoch_loss)  # Note: ReduceLROnPlateau needs a loss value
+                # Add smoothness loss
+                total_loss += lambda_smooth * smoothness_loss
+                total_loss += target_mean_loss_weight*compute_mean_depth_loss(depth)  # Add mean depth constraint
+                # Logging
+                if batch_idx % 20 == 0:
+                    # Save visualization
+                    save_visualization_improved(
+                        curr_image[0],
+                        depth[0, 0],
+                        epoch,
+                        batch_idx,
+                        i
+                    )
 
-        # Optional: Save checkpoints
-        if (epoch + 1) % 5 == 0:
-            torch.save({
-                'epoch': epoch,
-                'depth_net_state_dict': depth_net.state_dict(),
-                'pose_net_state_dict': pose_net.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': avg_epoch_loss,
-            }, f'checkpoint_epoch_{epoch + 1}.pth')
+                    print(f"\nBatch {batch_idx}")
+                    print(
+                        f"Disparity min={disp.min().item():.4f}, max={disp.max().item():.4f}, mean={disp.mean().item():.4f}")
+                    print(
+                        f"Depth min={depth.min().item():.4f}, max={depth.max().item():.4f}, mean={depth.mean().item():.4f}")
+                    print(f"Photometric Loss: {photometric_loss.item():.4f}")
+                    print(f"Smoothness Loss: {smoothness_loss.item():.4f}")
+                    print(f"Total Loss: {total_loss.item():.4f}")
+                    print("-" * 20)
+
+                # Optimization step
+                optimizer.zero_grad()
+                total_loss.backward()
+                # Add gradient clipping
+                torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
+                optimizer.step()
+
+                epoch_loss += total_loss.item()
+
+            # End of epoch
+            avg_epoch_loss = epoch_loss / len(train_loader)
+            print(f"Epoch [{epoch + 1}/{num_epochs}], Average Loss: {avg_epoch_loss:.4f}")
+
+            # Step the scheduler with the average epoch loss
+            scheduler.step(avg_epoch_loss)  # Note: ReduceLROnPlateau needs a loss value
+
+            # Optional: Save checkpoints
+            if (epoch + 1) % 100 == 0:
+                torch.save({
+                    'epoch': epoch,
+                    'depth_net_state_dict': depth_net.state_dict(),
+                    'pose_net_state_dict': pose_net.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': avg_epoch_loss,
+                }, f'checkpoint_epoch_{epoch + 1}.pth')
 
 
 if __name__ == '__main__':
