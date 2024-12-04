@@ -11,7 +11,7 @@ from Decoder import Decoder50
 
 class DepthNet50(nn.Module):
     def __init__(self, min_depth=0.05, max_depth=150.0):
-        super(DepthNet, self).__init__()
+        super(DepthNet50, self).__init__()
         # Initialize encoder (ResNet18-based) and decoder
         self.encoder = PoseNet50Encoder()
         self.decoder = Decoder50()
@@ -48,10 +48,10 @@ class DepthNet50(nn.Module):
 
 class DepthNet18(nn.Module):
     def __init__(self, min_depth=0.05, max_depth=150.0):
-        super(DepthNet, self).__init__()
+        super(DepthNet18, self).__init__()
         # Initialize encoder (ResNet18-based) and decoder
         self.encoder = PoseNet18Encoder()
-        self.decoder = Decoder()
+        self.decoder = Decoder18()
         
         # Set minimum and maximum depth constraints
         self.min_depth = min_depth
@@ -98,10 +98,10 @@ class DepthNet18(nn.Module):
 
 class DepthNetbase(nn.Module):
     def __init__(self, min_depth=0.05, max_depth=150.0):
-        super(DepthNet, self).__init__()
+        super(DepthNetbase, self).__init__()
         # Initialize encoder (ResNet18-based) and decoder
         self.encoder = PoseNet18Encoder()
-        self.decoder = Decoder()
+        self.decoder = Decoder18()
         
         # Set minimum and maximum depth constraints
         self.min_depth = min_depth
