@@ -1,4 +1,6 @@
 import os
+from random import random
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
@@ -50,7 +52,7 @@ class KITTIRawDataset(Dataset):
             #seq_dir = os.path.join(root_dir, seq)
             seq_dir = root_dir
             # List all drives within the date
-            drives = [d for d in os.listdir(seq_dir) if 'sync' in d]
+            drives = [d for d in os.listdir(r'C:\Github\monodepth2\kitti_data\2011_09_26') if 'sync' in d]
             for drive in drives:
                 drive_dir = os.path.join(seq_dir, drive)
                 image_dir = os.path.join(drive_dir, camera, 'data')
@@ -61,7 +63,7 @@ class KITTIRawDataset(Dataset):
                 # Get sorted list of image files
                 image_files = sorted([
                     os.path.join(image_dir, f) for f in os.listdir(image_dir)
-                    if f.endswith('.PNG') or f.endswith('.png') # just ensuring it is images only
+                    if f.endswith('.PNG') or f.endswith('.jpg') # just ensuring it is images only
                 ])
 
                 # Collect samples as dictionaries containing current and source images
@@ -76,6 +78,7 @@ class KITTIRawDataset(Dataset):
                         image_files[i + 1]
                     ]
                     self.samples.append(frame)
+        self.samples = self.samples[0:4500]
 
     def __len__(self):
         return len(self.samples)
@@ -128,20 +131,27 @@ class KITTIRawDatasetWithAugmentation(Dataset):
         ])
 
         for seq in sequences:
+            #seq_dir = os.path.join(root_dir, seq)
             seq_dir = root_dir
-            drives = [d for d in os.listdir(seq_dir) if 'sync' in d]
+            # List all drives within the date
+            drives = [d for d in os.listdir(r'C:\Github\monodepth2\kitti_data\2011_09_26') if 'sync' in d]
             for drive in drives:
                 drive_dir = os.path.join(seq_dir, drive)
                 image_dir = os.path.join(drive_dir, camera, 'data')
 
                 if not os.path.exists(image_dir):
-                    continue
+                    continue  # Skip if images are not available
 
+                # Get sorted list of image files
                 image_files = sorted([
                     os.path.join(image_dir, f) for f in os.listdir(image_dir)
-                    if f.endswith('.PNG') or f.endswith('.png')
+                    if f.endswith('.PNG') or f.endswith('.jpg') # just ensuring it is images only
                 ])
 
+                # Collect samples as dictionaries containing current and source images
+
+                # Two images to simulate multiple cameras, needs to be consecutive images.
+                # avoiding the use of first and last image, as no consecutive images exists.
                 for i in range(1, len(image_files) - 1):
                     frame = {}
                     frame['curr_img'] = image_files[i]
@@ -150,6 +160,7 @@ class KITTIRawDatasetWithAugmentation(Dataset):
                         image_files[i + 1]
                     ]
                     self.samples.append(frame)
+        self.samples = self.samples[0:4500]
 
     def __len__(self):
         return len(self.samples)
@@ -160,7 +171,7 @@ class KITTIRawDatasetWithAugmentation(Dataset):
         src_images = [Image.open(img_path).convert('RGB') for img_path in sample['src_imgs']]
 
         # Apply data augmentation
-        if random.random() < 0.5:  # 50% chance to apply augmentation
+        if random() < 0.5:  # 50% chance to apply augmentation
             curr_image = self.augmentation(curr_image)
             src_images = [self.augmentation(img) for img in src_images]
 

@@ -455,7 +455,7 @@ def get_experiment_config(i):
         target_mean_loss_weight = 1.0
         depth_net = DepthNet18() 
         KITTI_Raw_Data_set = KITTIRawDataset
-        pose_net= PoseNet(num_input_images=0)
+        pose_net= PoseNet(num_input_images=2)
         weight_decay = 1e-5
 
     elif i == 5:
@@ -480,10 +480,10 @@ def get_experiment_config(i):
 
 def main():
 
-    root_dir =  r'C:\Users\Benjamin Christensen\Desktop\9 semester\Deep learning for visual recognition\Projekt\kitti_data'
+    root_dir =  rf'C:\Github\monodepth2\kitti_data\2011_09_26'
     
-    train_sequences = ['10']
-    val_sequences = ['10']
+    train_sequences = [rf'2011_09_26']
+    val_sequences = train_sequences
 
     for i in range(7):  # Adjust the range based on the number of experiments
         depth_net, target_mean_loss_weight,KITTI_Raw_Data_set, pose_net,weight_decay ,name = get_experiment_config(i)
@@ -497,7 +497,7 @@ def main():
         val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=8, drop_last=False)
 
         # Initialize the model and optimizer
-        device = torch.device("cpu")
+        device = torch.device("cuda")
         depth_net.to(device)
 
         # Define optimizer with potential weight decay adjustment
@@ -536,7 +536,7 @@ def main():
         print(f"Current learning rate: {scheduler.get_last_lr()}")
 
         # Constants
-        num_epochs = 5
+        num_epochs = 10
         lambda_smooth = 0.000005    # Further reduce smoothness for better detail
         K = get_default_intrinsics().to(device)
         inv_K = torch.inverse(K).to(device)
@@ -650,14 +650,13 @@ def main():
             scheduler.step(avg_epoch_loss)  # Note: ReduceLROnPlateau needs a loss value
 
             # Optional: Save checkpoints
-            if (epoch + 1) % 100 == 0:
-                torch.save({
-                    'epoch': epoch,
-                    'depth_net_state_dict': depth_net.state_dict(),
-                    'pose_net_state_dict': pose_net.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': avg_epoch_loss,
-                }, f'checkpoint_epoch_{epoch + 1}.pth')
+            torch.save({
+                'epoch': epoch,
+                'depth_net_state_dict': depth_net.state_dict(),
+                'pose_net_state_dict': pose_net.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': avg_epoch_loss,
+            }, f'{name}_checkpoint_epoch_{epoch + 1}.pth')
 
 
 if __name__ == '__main__':
